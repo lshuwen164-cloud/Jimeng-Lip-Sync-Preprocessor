@@ -1,0 +1,8 @@
+{
+  "name": "Jimeng Lip-Sync Preprocessor",
+  "description": "A professional tool for preprocessing audio and video assets for Jimeng AI lip-sync generation. Features smart audio splitting, last-frame extraction from videos, and high-quality asset management.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
