@@ -11,14 +11,16 @@ interface SegmentProps {
   start: number;
   end: number;
   parentBuffer: AudioBuffer | null;
+  activePlayingId: string | null;
+  onTogglePlay: (id: string) => void;
 }
 
-const AudioSegmentPreview: React.FC<SegmentProps> = ({ id, index, url, blob, start, end, parentBuffer }) => {
+const AudioSegmentPreview: React.FC<SegmentProps> = ({ id, index, url, start, end, parentBuffer, activePlayingId, onTogglePlay }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const duration = end - start;
+  const isCurrentlyPlaying = activePlayingId === id;
 
   useEffect(() => {
     if (!canvasRef.current || !parentBuffer) return;
@@ -56,69 +58,83 @@ const AudioSegmentPreview: React.FC<SegmentProps> = ({ id, index, url, blob, sta
     ctx.stroke();
   }, [parentBuffer, start, end]);
 
-  const togglePlay = () => {
+  useEffect(() => {
     if (audioRef.current) {
-      if (isPlaying) audioRef.current.pause();
-      else audioRef.current.play();
-      setIsPlaying(!isPlaying);
+      if (isCurrentlyPlaying) {
+        audioRef.current.play().catch(() => {});
+      } else {
+        audioRef.current.pause();
+      }
+    }
+  }, [isCurrentlyPlaying]);
+
+  const handleSeek = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const newTime = (x / rect.width) * duration;
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
     }
   };
 
   return (
-    <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:border-indigo-100 transition-all group">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div className="bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-100 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-            {index + 1}
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-700">Part {index + 1}</p>
-            <p className="text-[10px] text-slate-400 font-mono">{(duration).toFixed(2)}s Duration</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-           <span className="text-[10px] font-mono font-bold text-slate-400">
-              {currentTime.toFixed(2)}s / {duration.toFixed(2)}s
-           </span>
-           <a 
-            href={url} 
-            download={`Jimeng_Part_${index+1}_${Math.round(duration)}s.wav`} 
-            className="p-1.5 bg-slate-50 text-slate-400 border border-slate-200 rounded-lg hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
-            title="Download this fragment"
-          >
-            <ArrowDownTrayIcon className="w-4 h-4" />
-          </a>
-        </div>
+    <div className={`flex items-center gap-3 p-2 px-3 bg-white rounded-xl border transition-all ${isCurrentlyPlaying ? 'border-indigo-400 shadow-md ring-1 ring-indigo-100' : 'border-slate-100 shadow-sm'}`}>
+      {/* Index Badge */}
+      <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black transition-colors ${isCurrentlyPlaying ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+        {index + 1}
       </div>
 
-      <div className="relative h-12 bg-slate-50 rounded-xl overflow-hidden border border-slate-100 mb-3 cursor-pointer" 
-           onClick={(e) => {
-             const rect = e.currentTarget.getBoundingClientRect();
-             const x = e.clientX - rect.left;
-             if (audioRef.current) audioRef.current.currentTime = (x / rect.width) * duration;
-           }}>
-        <canvas ref={canvasRef} width={400} height={48} className="w-full h-full opacity-60" />
+      {/* Play/Pause Button */}
+      <button 
+        onClick={() => onTogglePlay(id)}
+        className={`shrink-0 p-1.5 rounded-full transition-all active:scale-90 ${isCurrentlyPlaying ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+      >
+        {isCurrentlyPlaying ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
+      </button>
+
+      {/* Waveform Visualization */}
+      <div 
+        className="relative flex-1 h-8 bg-slate-50 rounded-lg overflow-hidden border border-slate-100 cursor-pointer group"
+        onClick={handleSeek}
+      >
+        <canvas ref={canvasRef} width={300} height={32} className="w-full h-full opacity-60" />
+        {/* Progress Bar Overlay */}
         <div 
-          className="absolute top-0 left-0 bottom-0 bg-indigo-500/20 border-r-2 border-indigo-500 transition-all pointer-events-none"
+          className="absolute top-0 left-0 bottom-0 bg-indigo-500/15 border-r border-indigo-500 transition-none pointer-events-none"
           style={{ width: `${(currentTime / duration) * 100}%` }}
         />
+        {/* Playhead Marker */}
+        <div className="absolute inset-y-0 opacity-0 group-hover:opacity-100 w-px bg-indigo-400 pointer-events-none" />
       </div>
 
-      <div className="flex items-center gap-3">
-        <button 
-          onClick={togglePlay}
-          className="p-1.5 bg-indigo-100 text-indigo-600 rounded-full hover:bg-indigo-600 hover:text-white transition-all"
-        >
-          {isPlaying ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
-        </button>
-        <audio 
-          ref={audioRef} 
-          src={url} 
-          onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)} 
-          onEnded={() => setIsPlaying(false)}
-          className="hidden" 
-        />
+      {/* Timer Display */}
+      <div className="shrink-0 flex flex-col items-end min-w-[60px]">
+        <span className="text-[10px] font-mono font-black text-slate-700 leading-none">
+          {currentTime.toFixed(1)}s
+        </span>
+        <span className="text-[8px] text-slate-400 font-mono">
+          / {duration.toFixed(1)}s
+        </span>
       </div>
+
+      {/* Download Button */}
+      <a 
+        href={url} 
+        download={`Jimeng_Part_${index+1}.wav`} 
+        className="shrink-0 p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+        title="Download Segment"
+        onClick={e => e.stopPropagation()}
+      >
+        <ArrowDownTrayIcon className="w-4 h-4" />
+      </a>
+
+      <audio 
+        ref={audioRef} 
+        src={url} 
+        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)} 
+        onEnded={() => onTogglePlay('')} // Stop global playing state
+        className="hidden" 
+      />
     </div>
   );
 };
@@ -133,7 +149,7 @@ interface Props {
 const AudioProcessor: React.FC<Props> = ({ asset, config, onUpdate, onUpdateConfig }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [activePlayingId, setActivePlayingId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -169,24 +185,37 @@ const AudioProcessor: React.FC<Props> = ({ asset, config, onUpdate, onUpdateConf
     ctx.stroke();
   }, [asset.buffer]);
 
-  const handlePlayToggle = () => {
-    if (audioRef.current) {
-      if (isPlaying) audioRef.current.pause();
-      else audioRef.current.play();
-      setIsPlaying(!isPlaying);
+  // Exclusive playback handler
+  const handleTogglePlay = (id: string) => {
+    if (activePlayingId === id) {
+      // Toggle pause if it's already active
+      setActivePlayingId(null);
+    } else {
+      // When switching to a new audio, start from beginning if it's the first time
+      // The individual audio elements handle their own current time once they mount,
+      // but the 'original' one is managed here.
+      if (id === 'original' && audioRef.current) {
+        // If we switch to original, we can choose to start from head or stay
+        // Requirement says default start from head on switch.
+      }
+      setActivePlayingId(id);
     }
   };
+
+  useEffect(() => {
+    if (audioRef.current) {
+      if (activePlayingId === 'original') {
+        audioRef.current.play().catch(() => {});
+      } else {
+        audioRef.current.pause();
+      }
+    }
+  }, [activePlayingId]);
 
   const addSplitPoint = (time?: number) => {
     const t = Math.max(0, Math.min(asset.duration, time ?? currentTime));
     if (asset.splitPoints.includes(t)) return;
     const updatedPoints = [...asset.splitPoints, t].sort((a, b) => a - b);
-    onUpdate({ ...asset, splitPoints: updatedPoints });
-  };
-
-  const adjustSplitPoint = (point: number, delta: number) => {
-    const newPoint = Math.max(0, Math.min(asset.duration, point + delta));
-    const updatedPoints = asset.splitPoints.map(p => p === point ? newPoint : p).sort((a, b) => a - b);
     onUpdate({ ...asset, splitPoints: updatedPoints });
   };
 
@@ -230,6 +259,7 @@ const AudioProcessor: React.FC<Props> = ({ asset, config, onUpdate, onUpdateConf
 
   const generateSegments = async () => {
     setIsProcessing(true);
+    setActivePlayingId(null); // Stop playback during processing
     const points = [0, ...asset.splitPoints, asset.duration];
     const newSegments = [];
     for (let i = 0; i < points.length - 1; i++) {
@@ -358,7 +388,10 @@ const AudioProcessor: React.FC<Props> = ({ asset, config, onUpdate, onUpdateConf
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               const x = e.clientX - rect.left;
-              if (audioRef.current) audioRef.current.currentTime = (x / rect.width) * asset.duration;
+              const newTime = (x / rect.width) * asset.duration;
+              if (audioRef.current) {
+                audioRef.current.currentTime = newTime;
+              }
             }}
           />
           <div 
@@ -381,10 +414,10 @@ const AudioProcessor: React.FC<Props> = ({ asset, config, onUpdate, onUpdateConf
         <div className="flex items-center justify-between mt-4">
           <div className="flex items-center gap-2">
             <button 
-              onClick={handlePlayToggle}
-              className="p-2.5 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all"
+              onClick={() => handleTogglePlay('original')}
+              className={`p-2.5 rounded-full transition-all active:scale-90 ${activePlayingId === 'original' ? 'bg-indigo-600 text-white shadow-md' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
             >
-              {isPlaying ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+              {activePlayingId === 'original' ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
             </button>
             <div className="flex flex-col">
               <span className="text-xs font-mono font-bold text-slate-700">{currentTime.toFixed(2)}s</span>
@@ -393,7 +426,7 @@ const AudioProcessor: React.FC<Props> = ({ asset, config, onUpdate, onUpdateConf
           </div>
           <button 
             onClick={() => addSplitPoint()}
-            className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 border border-rose-100 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-100"
+            className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 border border-rose-100 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-100 transition-all active:scale-95"
           >
             <ScissorsIcon className="w-4 h-4" />
             Manual Split
@@ -404,36 +437,53 @@ const AudioProcessor: React.FC<Props> = ({ asset, config, onUpdate, onUpdateConf
       <audio 
         ref={audioRef} src={asset.url} 
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-        onEnded={() => setIsPlaying(false)} className="hidden" 
+        onEnded={() => setActivePlayingId(null)} className="hidden" 
       />
 
       <div className="flex flex-col gap-3">
         <button 
           onClick={generateSegments} disabled={isProcessing}
-          className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all"
+          className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl active:scale-95 disabled:opacity-50"
         >
-          {isProcessing ? "Processing..." : "Generate Fragments"}
+          {isProcessing ? (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Slicing...
+            </div>
+          ) : (
+            <>
+              <ScissorsIcon className="w-5 h-5" />
+              Process Fragments
+            </>
+          )}
         </button>
 
         {asset.segments.length > 0 && (
           <div className="space-y-4 mt-6">
             <div className="flex items-center justify-between px-1">
               <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Fragments ({asset.segments.length})</p>
+              {/* Prominent Batch Download Button */}
               <button 
                 onClick={downloadAllSegments}
-                className="text-[10px] text-indigo-600 font-black bg-indigo-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-indigo-100"
+                className="group relative flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:shadow-indigo-300 transition-all active:scale-95"
               >
-                <ArrowDownTrayIcon className="w-3 h-3" />
-                Download Zip
+                <div className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
+                </div>
+                <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                Download Batch (ZIP)
               </button>
             </div>
-            <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+            <div className="flex flex-col gap-2 max-h-96 overflow-y-auto custom-scrollbar pr-2 pb-4">
               {asset.segments.map((seg, i) => (
                 <AudioSegmentPreview 
                   key={seg.id} index={i} id={seg.id} 
                   url={seg.url} blob={seg.blob} 
                   start={seg.start} end={seg.end} 
                   parentBuffer={asset.buffer} 
+                  activePlayingId={activePlayingId}
+                  onTogglePlay={handleTogglePlay}
                 />
               ))}
             </div>
